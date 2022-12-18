@@ -1,0 +1,17 @@
+zh_CN:
+  success: 成功
+  invalid_param: 参数非法
+  data_not_exists: 数据不存在
+  user_not_exists: 用户不存在
+  user_already_exists: 用户已存在
+  password_not_correct: 密码错误
+  account_expired: 账户过期
+  account_were_frozen: 账户被冻结
+  create_user_failed: 创建用户失败
+  create_data_failed: 新增数据失败
+  edit_data_failed: 编辑数据失败
+  delete_data_failed: 删除数据失败
+  query_data_should_not_empty: 查询条件不能为空
+  route_path_name_should_not_empty: 路由名称不能为空
+  could_not_recognize_current_page: 无法识别当前页面名称
+  

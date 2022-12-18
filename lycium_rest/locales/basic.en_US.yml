@@ -1,0 +1,17 @@
+en_US:
+  success: Success
+  invalid_param: Invalid parameter
+  data_not_exists: Data not exists
+  user_not_exists: User does not exists
+  user_already_exists: User already exists
+  password_not_correct: Incorrect password
+  account_expired: Account expired
+  account_were_frozen: Account were frozen
+  create_user_failed: Create user failed
+  create_data_failed: Create data failed
+  edit_data_failed: Edit data failed
+  delete_data_failed: Delete data failed
+  query_data_should_not_empty: Query condition should not be empty
+  route_path_name_should_not_empty: Route path name should not be empty
+  could_not_recognize_current_page: Could not recognize current page name
+  
