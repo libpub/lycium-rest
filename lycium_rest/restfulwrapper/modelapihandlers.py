@@ -269,7 +269,10 @@ class ModelRESTfulHandler(tornado.web.RequestHandler):
             LOG.error('delete %s [%s] failed with error:%s', get_model_class_name(self.model), str(form_pk_id), str(e))
             result.code = RESULT_CODE.FAIL
             result.message = str(e)
-        return result.encode_json()
+
+        self.set_header('Content-Type', 'application/json')
+        self.write(result.encode_json())
+        self.finish()
 
     async def do_get_list(self, params: dict, locale_params: dict):
         """

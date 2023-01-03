@@ -138,7 +138,7 @@ class ModelRelationsRESTfulHandler(tornado.web.RequestHandler):
             check_fields = [(self.src_model, self.src_field, src_value), (self.dst_model, self.dst_field, dst_value)]
             check_failed = False
             for cks in check_fields:
-                if not cks[2]:
+                if not cks[2] and cks[1] != self.dst_field:
                     result.code = RESULT_CODE.INVALID_PARAM
                     result.message = '%s field should have a valid value' % (cks[1])
                     LOG.warning('delete relation ids for %s failed, %s', get_model_class_name(self.middle_model), result.message)
@@ -148,10 +148,9 @@ class ModelRelationsRESTfulHandler(tornado.web.RequestHandler):
                 break
 
             try:
-                del_conds = [
-                    self.format_relation_find_conditions(self.middle_model, self.src_field, src_value)[0],
-                    self.format_relation_find_conditions(self.middle_model, self.dst_field, dst_value)[0]
-                ]
+                del_conds = [self.format_relation_find_conditions(self.middle_model, self.src_field, src_value)[0]]
+                if dst_value:
+                    del_conds.append(self.format_relation_find_conditions(self.middle_model, self.dst_field, dst_value)[0])
                 res = await DbProxy().del_items(self.middle_model, del_conds)
                 if res:
                     result.code = RESULT_CODE.OK

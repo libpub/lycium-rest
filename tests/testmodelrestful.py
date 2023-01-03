@@ -23,6 +23,7 @@ from hawthorn.asynchttphandler import GeneralTornadoHandler, async_route, reques
 from hawthorn.asyncrequest import async_http_request, async_post_json
 from hawthorn.modelutils import ModelBase, meta_data
 from hawthorn.modelutils.behaviors import ModifyingBehevior
+import unittest
 
 import lycium_rest
 from lycium_rest.utilities import get_current_timestamp, verify_password, generate_password
@@ -169,7 +170,7 @@ class User(_UserTable, ModifyingBehevior):
     roles = relationship('Role', secondary='au_user_assignment')
     
     __hidden_response_fields__ = ['password_hash']
-    operations = Operations(Operations.VIEW, Operations.ADD, Operations.EDIT, Operations.DELETE)
+    operations = Operations([Operations.VIEW, Operations.ADD, Operations.EDIT, Operations.DELETE])
     
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
@@ -409,133 +410,163 @@ web_app = WebApplication(static_path=os.path.abspath(CONF.static_folder),
                          template_path=os.path.abspath(CONF.template_folder),
                          cookie_secret='0123456789')
 
-async def do_tests():
-    # 1. login
-    params = {
-        'username': 'admin',
-        'password': 'admin'
-    }
-    endpoint_domain = CONF.server['host'] + ':' + str(CONF.server['port'])
-    resp = await async_http_request('POST', f"http://{endpoint_domain}/api/user/signin", json=params)
-    assert resp.code == http.HTTPStatus.OK
-    print('login result:', str(resp.body.decode()))
-    cookie = resp.headers.get('Set-Cookie')
-    headers = {
-        'Cookie': cookie
-    }
+class TestModelRESTful(unittest.IsolatedAsyncioTestCase):
+    
+    async def asyncSetUp(self):
+        lycium_rest.init_i18n('zh_CN')
+        print("Application loading...")
+        if CONF.rdbms:
+            if os.path.exists(CONF.rdbms['default'].get('host')):
+                os.remove(CONF.rdbms['default'].get('host'))
+            DbProxy().setup_rdbms(CONF.rdbms)
+        print("Application initializing...")
+        await do_migrations()
+        print("Application running...")
+        web_app.listen(port=CONF.server.get('port'), address=CONF.server.get('host'))
+        self.addAsyncCleanup(self.do_cleanup)
+        
+    async def test_model_restful(self):
+        # 1. login
+        params = {
+            'username': 'admin',
+            'password': 'admin'
+        }
+        endpoint_domain = CONF.server['host'] + ':' + str(CONF.server['port'])
+        resp = await async_http_request('POST', f"http://{endpoint_domain}/api/user/signin", json=params)
+        self.assertEqual(resp.code, http.HTTPStatus.OK)
+        result_data = json.loads(resp.body)
+        self.assertEqual(result_data.get('code', -1), 0)
+        # print('login result:', str(resp.body.decode()))
+        cookie = resp.headers.get('Set-Cookie')
+        headers = {
+            'Cookie': cookie
+        }
 
-    # test RESTful GET by id
-    resp = await async_http_request('GET', f"http://{endpoint_domain}/api/users/1", params={}, headers=headers)
-    assert resp.code == http.HTTPStatus.OK
-    print('get user element result:', str(resp.body.decode()))
+        # test RESTful GET by id
+        resp = await async_http_request('GET', f"http://{endpoint_domain}/api/users/1", params={}, headers=headers)
+        self.assertEqual(resp.code, http.HTTPStatus.OK)
+        print('get user element result:', str(resp.body.decode()))
+        result_data = json.loads(resp.body)
+        self.assertEqual(result_data.get('code', -1), 0)
 
-    # test RESTful GET list
-    resp = await async_http_request('GET', f"http://{endpoint_domain}/api/users", params={}, headers=headers)
-    assert resp.code == http.HTTPStatus.OK
-    print('get users list result:', str(resp.body.decode()))
-    
-    # test RESTful new record
-    expire_date = time.strftime('%Y-%m-%d %H:%M:%S', time.localtime(time.time()+86400))
-    post_data = {
-        'name': 'guest01',
-        'email': f'guest01@{APP_NAME}',
-        'telephone': '15012345678',
-        'avatar': 'https://gw.alipayobjects.com/zos/antfincdn/XAosXuNZyF/BiazfanxmamNRoxxVxka.png',
-        'password': 'guest01',
-        'status': 0,
-        'expiresAt': expire_date,
-        'passwordExpiresAt': expire_date,
-        'unlocksAt': expire_date,
-    }
-    resp = await async_http_request('POST', f"http://{endpoint_domain}/api/users", params={}, json=post_data, headers=headers)
-    assert resp.code == http.HTTPStatus.OK
-    print('new user result:', str(resp.body.decode()))
-    
-    # test RESTful GET findOne by condition
-    resp = await async_http_request('GET', f"http://{endpoint_domain}/api/users/findOne", params={'account': 'guest01'}, headers=headers)
-    assert resp.code == http.HTTPStatus.OK
-    print('get user element result:', str(resp.body.decode()))
-    
-    test_uid = json.loads(resp.body).get('data', {}).get('id', 0)
-    
-    resp = await async_http_request('PUT', f"http://{endpoint_domain}/api/users/{test_uid}", params={}, json=post_data, headers=headers)
-    assert resp.code == http.HTTPStatus.OK
-    print('update full fields user result:', str(resp.body.decode()))
-    
-    resp = await async_http_request('PATCH', f"http://{endpoint_domain}/api/users/{test_uid}", params={}, json=post_data, headers=headers)
-    assert resp.code == http.HTTPStatus.OK
-    print('update patch fields user result:', str(resp.body.decode()))
+        # test RESTful GET list
+        resp = await async_http_request('GET', f"http://{endpoint_domain}/api/users", params={}, headers=headers)
+        self.assertEqual(resp.code, http.HTTPStatus.OK)
+        print('get users list result:', str(resp.body.decode()))
+        result_data = json.loads(resp.body)
+        self.assertEqual(result_data.get('code', -1), 0)
+        
+        # test RESTful new record
+        expire_date = time.strftime('%Y-%m-%d %H:%M:%S', time.localtime(time.time()+86400))
+        post_data = {
+            'name': 'guest01',
+            'email': f'guest01@{APP_NAME}',
+            'telephone': '15012345678',
+            'avatar': 'https://gw.alipayobjects.com/zos/antfincdn/XAosXuNZyF/BiazfanxmamNRoxxVxka.png',
+            'password': 'guest01',
+            'status': 0,
+            'expiresAt': expire_date,
+            'passwordExpiresAt': expire_date,
+            'unlocksAt': expire_date,
+        }
+        resp = await async_http_request('POST', f"http://{endpoint_domain}/api/users", params={}, json=post_data, headers=headers)
+        self.assertEqual(resp.code, http.HTTPStatus.OK)
+        print('new user result:', str(resp.body.decode()))
+        result_data = json.loads(resp.body)
+        self.assertEqual(result_data.get('code', -1), 0)
+        
+        # test RESTful GET findOne by condition
+        resp = await async_http_request('GET', f"http://{endpoint_domain}/api/users/findOne", params={'account': 'guest01'}, headers=headers)
+        self.assertEqual(resp.code, http.HTTPStatus.OK)
+        print('get user element result:', str(resp.body.decode()))
+        result_data = json.loads(resp.body)
+        self.assertEqual(result_data.get('code', -1), 0)
+        
+        test_uid = result_data.get('data', {}).get('id', 0)
+        self.assertGreater(test_uid, 0)
+        
+        resp = await async_http_request('PUT', f"http://{endpoint_domain}/api/users/{test_uid}", params={}, json=post_data, headers=headers)
+        self.assertEqual(resp.code, http.HTTPStatus.OK)
+        print('update full fields user result:', str(resp.body.decode()))
+        result_data = json.loads(resp.body)
+        self.assertEqual(result_data.get('code', -1), 0)
+        
+        resp = await async_http_request('PATCH', f"http://{endpoint_domain}/api/users/{test_uid}", params={}, json=post_data, headers=headers)
+        self.assertEqual(resp.code, http.HTTPStatus.OK)
+        print('update patch fields user result:', str(resp.body.decode()))
+        result_data = json.loads(resp.body)
+        self.assertEqual(result_data.get('code', -1), 0)
 
-    roles = [
-        {'name': 'role1', 'status': 0}, {'name': 'role2', 'status': 0}
-    ]
-    resp = await async_http_request('POST', f"http://{endpoint_domain}/api/roles", params={}, json=roles, headers=headers)
-    assert resp.code == http.HTTPStatus.OK
-    print('new roles result:', str(resp.body.decode()))
-    
-    resp = await async_http_request('GET', f"http://{endpoint_domain}/api/roles", params={}, headers=headers)
-    assert resp.code == http.HTTPStatus.OK
-    print('get roles list result:', str(resp.body.decode()))
-    
-    role_ids = []
-    for role_data in json.loads(resp.body).get('data', []):
-        if role_data['name'].startswith('role'):
-            role_ids.append(role_data['id'])
-    
-    resp = await async_http_request('POST', f"http://{endpoint_domain}/api/users/{test_uid}/roles", params={}, json={'role_id': role_ids}, headers=headers)
-    assert resp.code == http.HTTPStatus.OK
-    print('new user-role mapper result:', str(resp.body.decode()))
+        roles = [
+            {'name': 'role1', 'status': 0}, {'name': 'role2', 'status': 0}
+        ]
+        resp = await async_http_request('POST', f"http://{endpoint_domain}/api/roles", params={}, json=roles, headers=headers)
+        self.assertEqual(resp.code, http.HTTPStatus.OK)
+        print('new roles result:', str(resp.body.decode()))
+        result_data = json.loads(resp.body)
+        self.assertEqual(result_data.get('code', -1), 0)
+        
+        resp = await async_http_request('GET', f"http://{endpoint_domain}/api/roles", params={}, headers=headers)
+        self.assertEqual(resp.code, http.HTTPStatus.OK)
+        print('get roles list result:', str(resp.body.decode()))
+        result_data = json.loads(resp.body)
+        self.assertEqual(result_data.get('code', -1), 0)
+        
+        role_ids = []
+        for role_data in json.loads(resp.body).get('data', []):
+            if role_data['name'].startswith('role'):
+                role_ids.append(role_data['id'])
+        
+        resp = await async_http_request('POST', f"http://{endpoint_domain}/api/users/{test_uid}/roles", params={}, json={'role_id': role_ids}, headers=headers)
+        self.assertEqual(resp.code, http.HTTPStatus.OK)
+        print('new user-role mapper result:', str(resp.body.decode()))
+        result_data = json.loads(resp.body)
+        self.assertEqual(result_data.get('code', -1), 0)
 
-    resp = await async_http_request('PATCH', f"http://{endpoint_domain}/api/users/{test_uid}/roles", params={}, json={'role_id': role_ids[0]}, headers=headers)
-    assert resp.code == http.HTTPStatus.OK
-    print('update user-role mapper result:', str(resp.body.decode()))
+        resp = await async_http_request('PATCH', f"http://{endpoint_domain}/api/users/{test_uid}/roles", params={}, json={'role_id': role_ids[0]}, headers=headers)
+        self.assertEqual(resp.code, http.HTTPStatus.OK)
+        print('update user-role mapper result:', str(resp.body.decode()))
+        result_data = json.loads(resp.body)
+        self.assertEqual(result_data.get('code', -1), 0)
 
-    resp = await async_http_request('DELETE', f"http://{endpoint_domain}/api/users/{test_uid}/roles", params={}, headers=headers)
-    assert resp.code == http.HTTPStatus.OK
-    print('delete user-role mapper result:', str(resp.body.decode()))
+        resp = await async_http_request('DELETE', f"http://{endpoint_domain}/api/users/{test_uid}/roles", params={}, headers=headers)
+        self.assertEqual(resp.code, http.HTTPStatus.OK)
+        print('delete user-role mapper result:', str(resp.body.decode()))
+        result_data = json.loads(resp.body)
+        self.assertEqual(result_data.get('code', -1), 0)
 
-    resp = await async_http_request('DELETE', f"http://{endpoint_domain}/api/users/{test_uid}", params={}, headers=headers)
-    assert resp.code == http.HTTPStatus.OK
-    print('delete user result:', str(resp.body.decode()))
-    
-    # test tree list data
-    resp = await async_http_request('GET', f"http://{endpoint_domain}/api/permissions/fetchTree", params={}, headers=headers)
-    assert resp.code == http.HTTPStatus.OK
-    print('get permissions list result:', str(resp.body.decode()))
-    
-    resp = await async_http_request('GET', f"http://{endpoint_domain}/api/organizations/fetchTree", params={}, headers=headers)
-    assert resp.code == http.HTTPStatus.OK
-    print('get organizations list result:', str(resp.body.decode()))
-    
-    # do get descriptor tests
-    resp = await async_http_request('GET', f"http://{endpoint_domain}/api/pages/descriptors", params={'pathname': '/pages/users'}, headers=headers)
-    assert resp.code == http.HTTPStatus.OK
-    descriptor_result = json.loads(resp.body.decode())
-    print('get page descriptor result:', resp.body.decode())
+        resp = await async_http_request('DELETE', f"http://{endpoint_domain}/api/users/{test_uid}", params={}, headers=headers)
+        self.assertEqual(resp.code, http.HTTPStatus.OK)
+        print('delete user result:', str(resp.body.decode()))
+        result_data = json.loads(resp.body)
+        self.assertEqual(result_data.get('code', -1), 0)
+        
+        # test tree list data
+        resp = await async_http_request('GET', f"http://{endpoint_domain}/api/permissions/fetchTree", params={}, headers=headers)
+        self.assertEqual(resp.code, http.HTTPStatus.OK)
+        print('get permissions list result:', str(resp.body.decode()))
+        result_data = json.loads(resp.body)
+        self.assertEqual(result_data.get('code', -1), 0)
+        
+        resp = await async_http_request('GET', f"http://{endpoint_domain}/api/organizations/fetchTree", params={}, headers=headers)
+        self.assertEqual(resp.code, http.HTTPStatus.OK)
+        print('get organizations list result:', str(resp.body.decode()))
+        result_data = json.loads(resp.body)
+        self.assertEqual(result_data.get('code', -1), 0)
+        
+        # do get descriptor tests
+        resp = await async_http_request('GET', f"http://{endpoint_domain}/api/pages/descriptors", params={'pathname': '/pages/users'}, headers=headers)
+        self.assertEqual(resp.code, http.HTTPStatus.OK)
+        print('get page descriptor result:', resp.body.decode())
+        result_data = json.loads(resp.body)
+        self.assertEqual(result_data.get('code', -1), 0)
 
-    print("stopping testing ioloop...")
-    IOLoop.instance().stop()
-    pass
-
-def test_model_restful():
-    lycium_rest.init_i18n('zh_CN')
-    # lycium_rest.init_i18n_locales_path()
-    print("Application loading...")
-    if CONF.rdbms:
-        if os.path.exists(CONF.rdbms['default'].get('host')):
-            os.remove(CONF.rdbms['default'].get('host'))
-        DbProxy().setup_rdbms(CONF.rdbms)
-    print("Application initializing...")
-    IOLoop.instance().run_sync(do_migrations)
-    print("Application running...")
-    web_app.listen(port=CONF.server.get('port'), address=CONF.server.get('host'))
-    IOLoop.instance().call_later(0.3, do_tests)
-    IOLoop.instance().start()
-    # clean testing db
-    print("clean testing db ...")
-    os.remove(CONF.rdbms['default'].get('host'))
-    print("testing finished.")
-    os._exit(0)
-
+        print("stopping testing ioloop...")
+        
+    async def do_cleanup(self):
+        print("clean testing db ...")
+        os.remove(CONF.rdbms['default'].get('host'))
+        print("testing finished.")
+        
 if __name__ == '__main__':
-    test_model_restful()
+    unittest.main()
