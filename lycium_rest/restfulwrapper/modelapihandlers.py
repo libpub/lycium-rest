@@ -17,6 +17,8 @@ from hawthorn.session import TornadoSession
 from hawthorn.exceptionreporter import ExceptionReporter
 from hawthorn.modelutils import ModelBase, model_columns, get_model_class_name
 from hawthorn.dbproxy import DbProxy
+from ..utilities import camel_case
+from ..utilities.treedata import format_items_as_tree
 from . import SESSION_UID_KEY
 from ..formvalidation.formutils import validate_form, save_form_fields
 from ..valueobjects.resultcodes import RESULT_CODE
@@ -30,12 +32,23 @@ class ModelRESTfulHandler(tornado.web.RequestHandler):
     """
     Model API handler wrapper
     """
-    def initialize(self, model: ModelBase, form: Form = None, ac=[]):
+    def initialize(self, model: ModelBase, form: Form = None, ac=[], auto_association: str|list[str]=None):
         self.model = model
         self.form = form
         self._ac = []
         self.session = TornadoSession(self)
         self.set_access_control(ac)
+        self.find_one_keys = {'fetchOne': True, 'findOne': True}
+        self.auto_association_keys = {}
+        if auto_association:
+            if isinstance(auto_association, str):
+                self.auto_association_keys['fetchTree'] = auto_association
+            elif isinstance(auto_association, list):
+                if len(auto_association) == 1:
+                    self.auto_association_keys['fetchTree'] = auto_association[0]
+                else:
+                    for k in auto_association:
+                        self.auto_association_keys['fetchTreeBy' + camel_case(k)] = k
 
     def set_access_control(self, ac):
         self._ac = []
@@ -95,72 +108,35 @@ class ModelRESTfulHandler(tornado.web.RequestHandler):
         filters = read_request_parameters(self.request)
         locale_params = get_locale_params(self.request)
         if id:
-            columns, pk = model_columns(self.model)
-            if id not in ['fetchOne', 'findOne']:
-                filters[pk] = id
-            result = GeneralResponseObject(RESULT_CODE.DATA_DOES_NOT_EXISTS, message=i18n.t('basic.data_not_exists', **locale_params))
-            while result.code != RESULT_CODE.OK:
-                filter_conds, err_msg = format_model_query_conditions(self.model, filters=filters)
-                if err_msg:
-                    result.code = RESULT_CODE.INVALID_PARAM
-                    result.message = err_msg
-                    break
+            if id in self.auto_association_keys:
+                result = await self.do_get_tree_list(id, filters, locale_params)
+            else:
+                columns, pk = model_columns(self.model)
+                if id not in self.find_one_keys:
+                    filters[pk] = id
+                result = GeneralResponseObject(RESULT_CODE.DATA_DOES_NOT_EXISTS, message=i18n.t('basic.data_not_exists', **locale_params))
+                while result.code != RESULT_CODE.OK:
+                    filter_conds, err_msg = format_model_query_conditions(self.model, filters=filters)
+                    if err_msg:
+                        result.code = RESULT_CODE.INVALID_PARAM
+                        result.message = err_msg
+                        break
 
-                m = await DbProxy().find_item(self.model, filters=filter_conds)
-                if m:
-                    result.code = RESULT_CODE.OK
-                    result.message = i18n.t('basic.success', **locale_params)
-                    if hasattr(m, 'as_dict'):
-                        result.data = getattr(m, 'as_dict')()
-                    else:
-                        result.data = dump_model_data(m, columns=columns)
-                break
+                    m = await DbProxy().find_item(self.model, filters=filter_conds)
+                    if m:
+                        result.code = RESULT_CODE.OK
+                        result.message = i18n.t('basic.success', **locale_params)
+                        if hasattr(m, 'as_dict'):
+                            result.data = getattr(m, 'as_dict')()
+                        else:
+                            result.data = dump_model_data(m, columns=columns)
+                    break
         else:
             result = await self.do_get_list(filters, locale_params)
         
         self.set_header('Content-Type', 'application/json')
         self.write(result.encode_json())
         self.finish()
-
-    async def do_get_list(self, params: dict, locale_params: dict):
-        """
-        API handler of get model list data by filter condition and pagination
-        """
-        filters = params.get('filter', {})
-        fields = params.get('fields', [])
-        if not filters or not isinstance(filters, dict):
-            filters = {}
-        limit, offset = get_listquery_pager_info(params)
-        orderby, direction = get_listquery_sort_info(params)
-
-        result = ListResponseObject(RESULT_CODE.DATA_DOES_NOT_EXISTS, message=i18n.t('basic.data_not_exists', **locale_params))
-        while result.code != RESULT_CODE.OK:
-            filter_conds, err_msg = format_model_query_conditions(self.model, filters=filters)
-            if err_msg:
-                result.code = RESULT_CODE.INVALID_PARAM
-                result.message = err_msg
-                break
-
-            rows, total = await DbProxy().query_list(self.model, filters=filter_conds, limit=limit, offset=offset, sort=orderby, direction=direction, selections=fields)
-            
-            if not fields:
-                if hasattr(self.model, 'as_dict'):
-                    formatted_rows = []
-                    for row in rows:
-                        m = self.model()
-                        for k, v in row.items():
-                            setattr(m, k, v)
-                        formatted_rows.append(getattr(m, 'as_dict')())
-                    rows = formatted_rows
-
-            result.code = RESULT_CODE.OK
-            result.message = i18n.t('basic.success', **locale_params)
-            result.total = total
-            result.data = rows
-            if limit:
-                result.pageSize = limit
-                result.page = int(offset/limit) + 1
-        return result
 
     async def post(self, id: str|int = None):
         """
@@ -252,6 +228,136 @@ class ModelRESTfulHandler(tornado.web.RequestHandler):
             return
         await self.do_edit(id, False)
 
+    async def delete(self, id: str|int = None):
+        """
+        API handler of delete model instance data
+        """
+        if not id:
+            self.set_status(HTTPStatus.NOT_FOUND)
+            self.finish()
+            return
+        # inputs = request_body_as_json(self.request)
+        locale_params = get_locale_params(self.request)
+        columns, pk = model_columns(self.model)
+        form_pk_id = id
+        if not form_pk_id:
+            LOG.warning('delete %s while not giving any id to delete', get_model_class_name(self.model))
+            return GeneralResponseObject(code=RESULT_CODE.INVALID_PARAM, message=i18n.t('basic.invalid_param', **locale_params)).encode_json()
+        m = await DbProxy().find_item(self.model, {getattr(self.model, pk)==form_pk_id})
+        if not m:
+            LOG.warning('delete %s [%s] info failed while data does not extsts', get_model_class_name(self.model), str(form_pk_id))
+            return GeneralResponseObject(code=RESULT_CODE.DATA_DOES_NOT_EXISTS, message=i18n.t('basic.data_not_exists', **locale_params)).encode_json()
+        
+        result = GeneralResponseObject(code=RESULT_CODE.FAIL, message=i18n.t('basic.delete_data_failed', **locale_params))
+        try:
+            res = False
+            if False and hasattr(m, 'obsoleted'):
+                if hasattr(m, 'set_session_uid'):
+                    session_uid = self.session[SESSION_UID_KEY]
+                    setattr(m, 'set_session_uid', session_uid)
+                setattr(m, 'obsoleted', 1)
+                res = await DbProxy().update_item(m)
+            else:
+                res = await DbProxy().del_item(m)
+            if res:
+                result.code = RESULT_CODE.OK
+                result.message = i18n.t('basic.success', **locale_params)
+                LOG.info('delete %s [%s] succeed', get_model_class_name(self.model), str(form_pk_id))
+            else:
+                LOG.warning('delete %s [%s] failed', get_model_class_name(self.model), str(form_pk_id))
+        except Exception as e:
+            LOG.error('delete %s [%s] failed with error:%s', get_model_class_name(self.model), str(form_pk_id), str(e))
+            result.code = RESULT_CODE.FAIL
+            result.message = str(e)
+        return result.encode_json()
+
+    async def do_get_list(self, params: dict, locale_params: dict):
+        """
+        API handler of get model list data by filter condition and pagination
+        """
+        filters = params.get('filter', {})
+        fields = params.get('fields', [])
+        if not filters or not isinstance(filters, dict):
+            filters = {}
+        limit, offset = get_listquery_pager_info(params)
+        orderby, direction = get_listquery_sort_info(params)
+
+        result = ListResponseObject(RESULT_CODE.DATA_DOES_NOT_EXISTS, message=i18n.t('basic.data_not_exists', **locale_params))
+        while result.code != RESULT_CODE.OK:
+            filter_conds, err_msg = format_model_query_conditions(self.model, filters=filters)
+            if err_msg:
+                result.code = RESULT_CODE.INVALID_PARAM
+                result.message = err_msg
+                break
+
+            rows, total = await DbProxy().query_list(self.model, filters=filter_conds, limit=limit, offset=offset, sort=orderby, direction=direction, selections=fields)
+            
+            if not fields:
+                if hasattr(self.model, 'as_dict'):
+                    formatted_rows = []
+                    for row in rows:
+                        m = self.model()
+                        for k, v in row.items():
+                            setattr(m, k, v)
+                        formatted_rows.append(getattr(m, 'as_dict')())
+                    rows = formatted_rows
+
+            result.code = RESULT_CODE.OK
+            result.message = i18n.t('basic.success', **locale_params)
+            result.total = total
+            result.data = rows
+            if limit:
+                result.pageSize = limit
+                result.page = int(offset/limit) + 1
+        return result
+
+    async def do_get_tree_list(self, id: str, params: dict, locale_params: dict):
+        """
+        API handler of get model tree list data by filter condition
+        """
+        filters = params.get('filter', {})
+        fields = params.get('fields', [])
+        if not filters or not isinstance(filters, dict):
+            filters = {}
+        limit, offset = get_listquery_pager_info(params, default_list_limit=3000, max_list_limit=5000)
+        orderby, direction = get_listquery_sort_info(params)
+
+        result = ListResponseObject(RESULT_CODE.DATA_DOES_NOT_EXISTS, message=i18n.t('basic.data_not_exists', **locale_params))
+        while result.code != RESULT_CODE.OK:
+            filter_conds, err_msg = format_model_query_conditions(self.model, filters=filters)
+            if err_msg:
+                result.code = RESULT_CODE.INVALID_PARAM
+                result.message = err_msg
+                break
+            
+            try:
+                rows, total = await DbProxy().query_list(self.model, filters=filter_conds, limit=limit, offset=offset, sort=orderby, direction=direction, selections=fields)
+            except Exception as e:
+                LOG.error('get %s tree list failed with error:%s', get_model_class_name(self.model), str(e))
+                result.code = RESULT_CODE.INTERNAL_ERROR
+                result.message = str(e)
+                break
+
+            if not fields:
+                if hasattr(self.model, 'as_dict'):
+                    formatted_rows = []
+                    for row in rows:
+                        m = self.model()
+                        for k, v in row.items():
+                            setattr(m, k, v)
+                        formatted_rows.append(getattr(m, 'as_dict')())
+                    rows = formatted_rows
+
+            _, pk = model_columns(self.model)
+            result.code = RESULT_CODE.OK
+            result.message = i18n.t('basic.success', **locale_params)
+            result.total = total
+            result.data = format_items_as_tree(rows, pk, self.auto_association_keys[id], locale_params)
+            if limit:
+                result.pageSize = limit
+                result.page = int(offset/limit) + 1
+        return result
+
     async def do_edit(self, id: str|int, ignore_empty: bool):
         """
         API handler of edit model instance data
@@ -299,46 +405,3 @@ class ModelRESTfulHandler(tornado.web.RequestHandler):
         self.set_header('Content-Type', 'application/json')
         self.write(result.encode_json())
         self.finish()
-
-    async def delete(self, id: str|int = None):
-        """
-        API handler of delete model instance data
-        """
-        if not id:
-            self.set_status(HTTPStatus.NOT_FOUND)
-            self.finish()
-            return
-        # inputs = request_body_as_json(self.request)
-        locale_params = get_locale_params(self.request)
-        columns, pk = model_columns(self.model)
-        form_pk_id = id
-        if not form_pk_id:
-            LOG.warning('delete %s while not giving any id to delete', get_model_class_name(self.model))
-            return GeneralResponseObject(code=RESULT_CODE.INVALID_PARAM, message=i18n.t('basic.invalid_param', **locale_params)).encode_json()
-        m = await DbProxy().find_item(self.model, {getattr(self.model, pk)==form_pk_id})
-        if not m:
-            LOG.warning('delete %s [%s] info failed while data does not extsts', get_model_class_name(self.model), str(form_pk_id))
-            return GeneralResponseObject(code=RESULT_CODE.DATA_DOES_NOT_EXISTS, message=i18n.t('basic.data_not_exists', **locale_params)).encode_json()
-        
-        result = GeneralResponseObject(code=RESULT_CODE.FAIL, message=i18n.t('basic.delete_data_failed', **locale_params))
-        try:
-            res = False
-            if False and hasattr(m, 'obsoleted'):
-                if hasattr(m, 'set_session_uid'):
-                    session_uid = self.session[SESSION_UID_KEY]
-                    setattr(m, 'set_session_uid', session_uid)
-                setattr(m, 'obsoleted', 1)
-                res = await DbProxy().update_item(m)
-            else:
-                res = await DbProxy().del_item(m)
-            if res:
-                result.code = RESULT_CODE.OK
-                result.message = i18n.t('basic.success', **locale_params)
-                LOG.info('delete %s [%s] succeed', get_model_class_name(self.model), str(form_pk_id))
-            else:
-                LOG.warning('delete %s [%s] failed', get_model_class_name(self.model), str(form_pk_id))
-        except Exception as e:
-            LOG.error('delete %s [%s] failed with error:%s', get_model_class_name(self.model), str(form_pk_id), str(e))
-            result.code = RESULT_CODE.FAIL
-            result.message = str(e)
-        return result.encode_json()

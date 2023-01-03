@@ -1,5 +1,11 @@
 en_US:
   success: Success
+  none: None
+  add: Add
+  edit: Edit
+  view: View
+  delete: Delete
+  operation: Operation
   invalid_param: Invalid parameter
   data_not_exists: Data not exists
   user_not_exists: User does not exists

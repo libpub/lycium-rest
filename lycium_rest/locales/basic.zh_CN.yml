@@ -1,5 +1,11 @@
 zh_CN:
   success: 成功
+  none: 无
+  add: 添加
+  edit: 编辑
+  view: 查看
+  delete: 删除
+  operation: 操作
   invalid_param: 参数非法
   data_not_exists: 数据不存在
   user_not_exists: 用户不存在

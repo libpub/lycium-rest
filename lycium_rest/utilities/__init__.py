@@ -3,6 +3,7 @@
 
 import time
 import bcrypt
+import re
 
 def get_current_timestamp():
     """
@@ -25,3 +26,7 @@ def verify_password(pwd: str, password_hash: str):
     if bcrypt.checkpw(pwd, password_hash):
         return True
     return False
+
+def camel_case(txt: str):
+    txt = re.sub(r"(_|-)+", " ", txt).title().replace(' ', '')
+    return txt

@@ -26,7 +26,7 @@ from hawthorn.modelutils.behaviors import ModifyingBehevior
 
 import lycium_rest
 from lycium_rest.utilities import get_current_timestamp, verify_password, generate_password
-from lycium_rest.restfulwrapper import register_restful_apis, restful_api, SESSION_UID_KEY
+from lycium_rest.restfulwrapper import register_restful_apis, restful_api, SESSION_UID_KEY, Relations, Operations
 from lycium_rest.migrationutils import set_appname, set_migrates, do_migrations
 from lycium_rest.valueobjects.resultcodes import RESULT_CODE
 from lycium_rest.valueobjects.responseobject import GeneralResponseObject
@@ -147,7 +147,7 @@ class RoleForm(Form):
         ])
     
 class _UserTable(ModelBase):
-    __tablename__ = 'sys_user'
+    __tablename__ = 'au_user'
 
     id = Column('id', Integer, primary_key=True, autoincrement=True)
     account = Column('account', String(64), index=True, unique=True)
@@ -166,9 +166,10 @@ class _UserTable(ModelBase):
 @restful_api(endpoint='/api/users', title='Users', form=UserForm)
 class User(_UserTable, ModifyingBehevior):
     
-    roles = relationship('Role', secondary='sys_user_role')
+    roles = relationship('Role', secondary='au_user_assignment')
     
     __hidden_response_fields__ = ['password_hash']
+    operations = Operations(Operations.VIEW, Operations.ADD, Operations.EDIT, Operations.DELETE)
     
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
@@ -188,7 +189,7 @@ class User(_UserTable, ModifyingBehevior):
         }
 
 class _RoleTable(ModelBase):
-    __tablename__ = 'sys_role'
+    __tablename__ = 'au_role'
 
     id = Column('id', Integer, primary_key=True, autoincrement=True)
     name = Column('name', String(64), index=True, unique=True)
@@ -196,23 +197,69 @@ class _RoleTable(ModelBase):
     status = Column('status', SmallInteger, index=True, default=0)
 
 # test auto generate endpoint
-@restful_api(endpoint='/api/roles', title='Roles', form=RoleForm)
+@restful_api(endpoint='/api/roles', title='Roles', form=RoleForm, relations=[Relations('RoleAssignment', 'role_id', 'permission_id', 'Permission')])
 class Role(_RoleTable, ModifyingBehevior):
-    # users = relationship('User', secondary='sys_user_role')
+    # permissions = relationship('Permission', secondary='au_role_assignment')
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
 
-class _UserRoleTable(ModelBase):
-    __tablename__ = 'sys_user_role'
+class _UserAssignmentTable(ModelBase):
+    __tablename__ = 'au_user_assignment'
 
     id = Column('id', Integer, primary_key=True, autoincrement=True)
     user_id = Column('user_id', ForeignKey(_UserTable.__tablename__ + '.' + User.id.name), index=True)
     role_id = Column('role_id', ForeignKey(_RoleTable.__tablename__ + '.' + Role.id.name), index=True)
-    # user_id = Column('user_id', Integer, unique=True)
-    # role_id = Column('role_id', Integer, unique=True)
 
-# @restful_api('/api/userrole', relations=Relations('user_id', 'role_id', User, Role))
-class UserRoleMapper(_UserRoleTable, ModifyingBehevior):
+class UserAssignment(_UserAssignmentTable, ModifyingBehevior):
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+
+class _PermissionTable(ModelBase):
+    __tablename__ = 'au_permission'
+
+    id = Column('id', Integer, primary_key=True, autoincrement=True)
+    name = Column('name', String(64), index=True)
+    path = Column('path', String(256), index=True, unique=True)
+    parent_id = Column('parent_id', Integer, index=True, default=0)
+    icon = Column('icon', String(256), default='')
+    status = Column('status', SmallInteger, index=True, default=0)
+    displayorder = Column('displayorder', SmallInteger, index=True, default=0)
+
+@restful_api(endpoint='/api/permissions', title='Permissions', form=None, auto_association='parent_id')
+class Permission(_PermissionTable, ModifyingBehevior):
+    """
+    权限信息
+    """
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+
+class _RoleAssignmentTable(ModelBase):
+    __tablename__ = 'au_role_assignment'
+
+    id = Column('id', Integer, primary_key=True, autoincrement=True)
+    role_id = Column('role_id', ForeignKey(_RoleTable.__tablename__ + '.' + Role.id.name), index=True)
+    permission_id = Column('permission_id', ForeignKey(_PermissionTable.__tablename__ + '.' + Permission.id.name), index=True)
+
+class RoleAssignment(_RoleAssignmentTable, ModifyingBehevior):
+    """
+    角色与权限关联表
+    """
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+
+class _OrganizationTable(ModelBase):
+    __tablename__ = 'sys_organization'
+    
+    id = Column('id', Integer, primary_key=True, autoincrement=True)
+    code = Column('code', String(64), index=True)
+    name = Column('name', String(64), index=True)
+    parent_id = Column('parent_id', ForeignKey('sys_organization.id'), index=True, default=0)
+
+@restful_api(endpoint='/api/organizations', title='Organazations', form=None)
+class Organization(_OrganizationTable, ModifyingBehevior):
+    """
+    组织机构表
+    """
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
 
@@ -231,6 +278,80 @@ async def migrate_v000100_v000101():
     u.unlocks_at = 0
     u.password_expires_at = int(time.time()*1000)
     await DbProxy().insert_item(u, auto_flush=True)
+
+    # create admin role
+    r = Role()
+    r.set_session_uid(APP_NAME)
+    r.name = 'System Administrator'
+    r.status = 0
+    r = await DbProxy().insert_item(r, auto_flush=True)
+    
+    # create permissions
+    permissions = [
+        {'name': '首页', 'path': '/home', 'icon': 'home', 'displayorder': 1},
+        {'name': '系统管理', 'path': '/sysadmin', 'icon': 'setting', 'displayorder': 9, 'children': [
+            {'name': '用户管理', 'path': '/sysadmin/users', 'icon': 'user'},
+            {'name': '角色管理', 'path': '/sysadmin/roles', 'icon': 'team'},
+            {'name': '权限管理', 'path': '/sysadmin/permissions', 'icon': 'lock'},
+        ]},
+    ]
+    permission_ids = []
+    for e in permissions:
+        await save_tree_model(Permission, 'id', 'parent_id', e, permission_ids, 'displayorder')
+        
+    # assign role permissions
+    for id in permission_ids:
+        ra = RoleAssignment()
+        ra.set_session_uid(APP_NAME)
+        ra.permission_id = id
+        ra.role_id = r.id
+        await DbProxy().insert_item(ra, auto_flush=True)
+        
+    # asssign user role
+    ua = UserAssignment()
+    ua.set_session_uid(APP_NAME)
+    ua.user_id = u.id
+    ua.role_id = r.id
+    await DbProxy().insert_item(ua, auto_flush=True)
+    
+    # organizations
+    organizations = [
+        {'code': '1001', 'name': '集团', 'children': [
+            {'code': '100101', 'name': '综合部'},
+            {'code': '100102', 'name': '研发部', 'children': [
+                {'code': '10010201', 'name': '创新事业部'},
+                {'code': '10010202', 'name': 'AI事业部'},
+                {'code': '10010202', 'name': '大数据事业部'}
+            ]},
+            {'code': '100103', 'name': '销售部', 'children': [
+                {'code': '10010301', 'name': '销售一部'},
+                {'code': '10010302', 'name': '销售二部'}
+            ]}
+        ]}
+    ]
+    organization_ids = []
+    for e in organizations:
+        await save_tree_model(Organization, 'id', 'parent_id', e, organization_ids, None)
+
+async def save_tree_model(model: ModelBase, pk: str, parent_key: str, e: dict, saved_ids: list, displayorder_key: str = None, parent_id: int = 0, parent_displayorder: int = 0):
+    m = model()
+    if hasattr(m, 'set_session_uid'):
+        m.set_session_uid(APP_NAME)
+    for k, v in e.items():
+        if hasattr(m, k):
+            setattr(m, k, v)
+    setattr(m, parent_key, parent_id)
+    if displayorder_key:
+        if displayorder_key in e:
+            setattr(m, displayorder_key, e[displayorder_key])
+            parent_displayorder = e[displayorder_key]
+        else:
+            setattr(m, displayorder_key, parent_displayorder)
+    m = await DbProxy().insert_item(m, auto_flush=True)
+    saved_ids.append(getattr(m, pk))
+    if 'children' in e:
+        for e1 in e['children']:
+            await save_tree_model(model, pk, parent_key, e1, saved_ids, displayorder_key, getattr(m, pk), parent_displayorder)
 
 set_appname(APP_NAME)
 set_migrates([migrate_v000100_v000101])
@@ -377,11 +498,20 @@ async def do_tests():
     assert resp.code == http.HTTPStatus.OK
     print('delete user result:', str(resp.body.decode()))
     
+    # test tree list data
+    resp = await async_http_request('GET', f"http://{endpoint_domain}/api/permissions/fetchTree", params={}, headers=headers)
+    assert resp.code == http.HTTPStatus.OK
+    print('get permissions list result:', str(resp.body.decode()))
+    
+    resp = await async_http_request('GET', f"http://{endpoint_domain}/api/organizations/fetchTree", params={}, headers=headers)
+    assert resp.code == http.HTTPStatus.OK
+    print('get organizations list result:', str(resp.body.decode()))
+    
     # do get descriptor tests
     resp = await async_http_request('GET', f"http://{endpoint_domain}/api/pages/descriptors", params={'pathname': '/pages/users'}, headers=headers)
     assert resp.code == http.HTTPStatus.OK
     descriptor_result = json.loads(resp.body.decode())
-    print('get page descriptor result:', descriptor_result)
+    print('get page descriptor result:', resp.body.decode())
 
     print("stopping testing ioloop...")
     IOLoop.instance().stop()

@@ -13,6 +13,22 @@ from hawthorn.utilities import toint
 
 LOG = logging.getLogger('services.generalmodelapi.utils')
 
+def find_model_class_by_table_name(table_name: str) -> ModelBase | None:
+    tbl_model: ModelBase = None
+    for model in ModelBase.registry.mappers:
+        if hasattr(model.class_, '__tablename__') and model.class_.__tablename__ == table_name:
+            # print(model.class_.__name__)
+            if model.class_.__name__[0] != '_':
+                tbl_model = model.class_
+                break
+    return tbl_model
+
+def find_model_class_by_cls_name(cls_name: str) -> ModelBase | None:
+    for model in ModelBase.registry.mappers:
+        if model.class_.__name__ == cls_name:
+            return model.class_
+    return None
+
 def format_model_query_conditions(model: ModelBase, filters: dict = {}, skip_non_existed_column=True):
     filter_conds = []
     err_messages = []
