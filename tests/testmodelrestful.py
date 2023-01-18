@@ -170,7 +170,7 @@ class User(_UserTable, ModifyingBehevior):
     roles = relationship('Role', secondary='au_user_assignment')
     
     __hidden_response_fields__ = ['password_hash']
-    operations = Operations([Operations.VIEW, Operations.ADD, Operations.EDIT, Operations.DELETE])
+    operations = Operations([Operations.VIEW, {'action': 'relation', 'title': i18n.t('basic.role'), 'searchURL': '/api/roles', 'saveURL': '/api/users/:id/roles'}, Operations.EDIT, Operations.DELETE])
     
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
@@ -201,6 +201,7 @@ class _RoleTable(ModelBase):
 @restful_api(endpoint='/api/roles', title='Roles', form=RoleForm, relations=[Relations('RoleAssignment', 'role_id', 'permission_id', 'Permission')])
 class Role(_RoleTable, ModifyingBehevior):
     # permissions = relationship('Permission', secondary='au_role_assignment')
+    operations = Operations([{'action': 'relation', 'title': i18n.t('basic.permission'), 'searchURL': '/api/permissions/fetchTree', 'saveURL': '/api/roles/:id/permissions'}, Operations.EDIT, Operations.DELETE])
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
 

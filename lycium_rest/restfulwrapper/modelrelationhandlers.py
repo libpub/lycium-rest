@@ -183,9 +183,22 @@ class ModelRelationsRESTfulHandler(tornado.web.RequestHandler):
             LOG.error('failed to execute handler of %s %s relations id, %s', mode, get_model_class_name(self.middle_model), err_message)
             return err_message, HTTPStatus.INTERNAL_SERVER_ERROR
         inputs = request_body_as_json(self.request)
-        inputs[self.src_field] = instanceID
-        src_value = inputs.get(self.src_field, 0)
-        dst_value = inputs.get(self.dst_field, 0)
+        if isinstance(inputs, dict):
+            inputs[self.src_field] = instanceID
+            src_value = inputs.get(self.src_field, 0)
+            dst_value = inputs.get(self.dst_field, 0)
+        elif isinstance(inputs, list):
+            src_value = instanceID
+            dst_value = inputs
+            inputs = {
+                self.src_field: instanceID,
+                self.dst_field: dst_value
+            }
+        else:
+            err_message = i18n.t('basic.invalid_param', **locale_params)
+            LOG.warning('failed to execute handler of %s %s relations id, %s', mode, get_model_class_name(self.middle_model), err_message)
+            return err_message, HTTPStatus.BAD_REQUEST
+            
         extra_field_values = {}
         middle_model_columns, middle_model_pk = model_columns(self.middle_model)
         for k in middle_model_columns:

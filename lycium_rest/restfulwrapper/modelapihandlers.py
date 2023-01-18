@@ -17,7 +17,7 @@ from hawthorn.session import TornadoSession
 from hawthorn.exceptionreporter import ExceptionReporter
 from hawthorn.modelutils import ModelBase, model_columns, get_model_class_name
 from hawthorn.dbproxy import DbProxy
-from ..utilities import camel_case
+from hawthorn.utilities import pascal_case
 from ..utilities.treedata import format_items_as_tree
 from . import SESSION_UID_KEY
 from ..formvalidation.formutils import validate_form, save_form_fields
@@ -48,7 +48,7 @@ class ModelRESTfulHandler(tornado.web.RequestHandler):
                     self.auto_association_keys['fetchTree'] = auto_association[0]
                 else:
                     for k in auto_association:
-                        self.auto_association_keys['fetchTreeBy' + camel_case(k)] = k
+                        self.auto_association_keys['fetchTreeBy' + pascal_case(k)] = k
 
     def set_access_control(self, ac):
         self._ac = []
