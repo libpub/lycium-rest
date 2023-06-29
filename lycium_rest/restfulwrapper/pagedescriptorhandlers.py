@@ -27,6 +27,14 @@ class ModelPageDescriptorsApiHandler():
     """
     def __init__(self, get_page_descriptor_model: Callable[[str], RESTfulAPIWraper]):
         self.get_page_descriptor_model = get_page_descriptor_model
+        
+    def get_model_page_type(self, w: RESTfulAPIWraper):
+        page_type = 'autotable'
+        if w.cls:
+            m = w.cls()
+            if hasattr(m, '__page_type__'):
+                page_type = getattr(m, '__page_type__', 'autotable')
+        return page_type
 
     async def handler_get(self, handler: GeneralTornadoHandler, request: tornado.httputil.HTTPServerRequest):
         """
@@ -57,7 +65,10 @@ class ModelPageDescriptorsApiHandler():
 
             result.code = RESULT_CODE.OK
             result.message = i18n.t('basic.success', **locale_params)
-            result.data = w.destriptor()
+            result.data = {
+                'pageType': self.get_model_page_type(w),
+                'schema': w.destriptor()
+            }
             break
         
         return result.encode_json()

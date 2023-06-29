@@ -8,6 +8,14 @@ zh_CN:
   operation: 操作
   role: 角色
   permission: 权限
+  normal: 正常
+  obsoleted_status: 废弃状态
+  obsoleted: 废弃
+  please_select_correct_obsoleted_status: 请选择正确的废弃状态
+  created_at: 创建时间
+  updated_at: 更新时间
+  created_by: 创建者
+  updated_by: 更新者
   invalid_param: 参数非法
   data_not_exists: 数据不存在
   user_not_exists: 用户不存在
