@@ -239,14 +239,19 @@ class DateTimeValidator(Regexp):
     :param flags:
         The regexp flags to use, for example re.IGNORECASE. Ignored if
         `regex` is not a string.
+    :param allow_empty:
+        If the field allows empty
     :param message:
         Error message to raise in case of a validation error.
     """
 
-    def __init__(self, regex=r'^\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}$', flags=0, message=None):
+    def __init__(self, regex=r'^\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}$', flags=0, allow_empty=False, message=None):
         super().__init__(regex, flags, message)
+        self.allow_empty = allow_empty
 
     def __call__(self, form, field, message=None):
+        if self.allow_empty and not field.data:
+            return True
         match = self.regex.match(field.data or "")
         if match:
             return match

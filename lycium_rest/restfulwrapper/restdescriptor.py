@@ -8,6 +8,7 @@ from wtforms import Form, Field
 from wtforms.validators import DataRequired, NumberRange, Length, Regexp, AnyOf, Email, URL
 from hawthorn.modelutils import ModelBase, model_columns, get_model_class_name
 from lycium_rest.formvalidation.validators import DateTimeValidator
+from lycium_rest.formvalidation.formitemprops import FormItemProps
 from .utils import find_model_class_by_cls_name
 
 class Relations:
@@ -100,44 +101,72 @@ class RESTfulAPIWraper:
         if colfield.comment:
             column['description'] = colfield.comment
         if colfield.autoincrement:
-            column['hideInForm'] = True
-            column['readonly'] = True
-            column['hideInSearch'] = True
+            if isinstance(colfield.autoincrement, bool) or colfield.primary_key:
+                column['hideInForm'] = True
+                column['readonly'] = True
+                column['hideInSearch'] = True
+        
         elif colfield.index:
             column['hideInSearch'] = False
         if colname in formFieldsMapper:
-            field = formFieldsMapper[colname]
-            if field.label:
-                column['label'] = field.label.text
-            if field.description:
-                column['description'] = field.description
-            for validator in field.validators:
-                if isinstance(validator, DataRequired):
-                    column['formItemProps']['rules'].append({'required': True, 'message': validator.message})
-                elif isinstance(validator, DateTimeValidator):
-                    column['valueType'] = 'dateTime'
-                    column['sortable'] = True
-                elif isinstance(validator, Regexp):
-                    column['formItemProps']['rules'].append({'pattern': validator.regex.pattern, 'message': validator.message})
-                elif isinstance(validator, Length) or isinstance(validator, NumberRange):
-                    if validator.max > 0:
-                        column['formItemProps']['rules'].append({'max': validator.max, 'message': validator.message})
-                    if validator.min > 0:
-                        column['formItemProps']['rules'].append({'min': validator.min, 'message': validator.message})
-                    # if isinstance(validator, NumberRange):
-                    #     column['valueType'] = 'number'
-                elif isinstance(validator, AnyOf):
-                    enumValues = validator.values
-                    if isinstance(validator.values, dict):
-                        column['valueType'] = 'select'
-                        column['valueEnum'] = [{'value': k, 'text': v} for k, v in validator.values.items()]
-                        enumValues = [k for k, _ in validator.values.items()]
-                    column['formItemProps']['rules'].append({'enum': enumValues, 'message': validator.message})
-                elif isinstance(validator, Email):
-                    column['formItemProps']['rules'].append({'type': 'email', 'message': validator.message})
-                elif isinstance(validator, URL):
-                    column['formItemProps']['rules'].append({'type': 'url', 'message': validator.message})
+            self._format_column_with_form_field(column, formFieldsMapper[colname])
+            
         return column
+    
+    def _format_column_with_form_field(self, column: dict, field: Field):
+        if field.label:
+            column['label'] = field.label.text
+        if field.type == 'IntegerField':
+            column['valueType'] = 'digit'
+        if field.description:
+            column['description'] = field.description
+        for validator in field.validators:
+            self._format_column_form_item_props_with_validator(column, validator)
+    
+    def _format_column_form_item_props_with_validator(self, column: dict, validator: object):
+        if isinstance(validator, DataRequired):
+            column['formItemProps']['rules'].append({'required': True, 'message': validator.message})
+        elif isinstance(validator, DateTimeValidator):
+            column['valueType'] = 'dateTime'
+            column['sortable'] = True
+        elif isinstance(validator, Regexp):
+            column['formItemProps']['rules'].append({'pattern': validator.regex.pattern, 'message': validator.message})
+        elif isinstance(validator, Length) or isinstance(validator, NumberRange):
+            if validator.max != 0 or validator.min != 0:
+                range_rule = {'message': validator.message}
+                if validator.max != 0:
+                    range_rule['max'] = validator.max
+                if validator.min != 0:
+                    range_rule['min'] = validator.min
+                column['formItemProps']['rules'].append(range_rule)
+            if isinstance(validator, NumberRange):
+                column['valueType'] = 'digit'
+        elif isinstance(validator, AnyOf):
+            enumValues = validator.values
+            if isinstance(validator.values, dict):
+                column['valueType'] = 'select'
+                column['valueEnum'] = [{'value': k, 'text': v} for k, v in validator.values.items()]
+                enumValues = [k for k, _ in validator.values.items()]
+            column['formItemProps']['rules'].append({'enum': enumValues, 'message': validator.message})
+        elif isinstance(validator, Email):
+            column['formItemProps']['rules'].append({'type': 'email', 'message': validator.message})
+        elif isinstance(validator, URL):
+            column['formItemProps']['rules'].append({'type': 'url', 'message': validator.message})
+        elif isinstance(validator, FormItemProps):
+            self._format_column_normal_form_item_props(column, validator)
+    
+    def _format_column_normal_form_item_props(self, column: dict, props: FormItemProps):
+        if props.password:
+            column['valueType'] = 'password'
+            column['hideInTable'] = True
+            column['hideInSearch'] = True
+        if props.hide_in_form:
+            column['hideInForm'] = True
+            column['readonly'] = True
+        if props.hide_in_search:
+            column['hideInSearch'] = True
+        if props.hide_in_table:
+            column['hideInTable'] = True
 
 class Operations:
     """Defines model record operations for frontend page, this defination would filled in 
