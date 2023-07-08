@@ -2,6 +2,7 @@
 # -*- coding: utf-8 -*-
 
 from wtforms.validators import StopValidation, ValidationError, Regexp
+import asyncio
 from hawthorn.dbproxy import DbProxy
 from hawthorn.modelutils import ModelBase, MongoBase
 from hawthorn.utilities import toint, tofloat
@@ -41,7 +42,7 @@ class DataExistsValidator(object):
         self.allows_empty = allows_empty
         self.ignore_obsoleted = ignore_obsoleted
 
-    async def __call__(self, form, field):
+    def __call__(self, form, field):
         if not field.data or isinstance(field.data, str) and not field.data.strip():
             if self.allows_empty:
                 return
@@ -73,7 +74,7 @@ class DataExistsValidator(object):
                         if u.get('field') and u.get('data'):
                             mongo_condition[u.get('field')] = u.get('data')
                 try:
-                    val = await DbProxy().query_all_mongo(model, mongo_condition)
+                    val = self.fetch_async_result(DbProxy().query_all_mongo(model, mongo_condition))
                 except Exception as e:
                     field.errors[:] = []
                     raise StopValidation(str(e))
@@ -93,7 +94,7 @@ class DataExistsValidator(object):
                         if u.get('field') and u.get('data'):
                             pg_condition.append(getattr(model, u.get('field')) == u.get('data'))
                 try:
-                    val = await DbProxy().find_item(model, pg_condition)
+                    val = self.fetch_async_result(DbProxy().find_item(model, pg_condition))
                 except Exception as e:
                     field.errors[:] = []
                     raise StopValidation(str(e))
@@ -115,7 +116,7 @@ class DataExistsValidator(object):
             if message:
                 field.errors[:] = []
                 raise StopValidation(message)
-    
+        
     def get_validate_model(self, form):
         model = self.model
         if isinstance(model, dict):
@@ -142,6 +143,11 @@ class DataExistsValidator(object):
             else:
                 return None
         return name_field
+    
+    def fetch_async_result(self, async_task):
+        # IOLoop.current()._ioloop_for_asyncio()
+        val = asyncio.get_event_loop().run_until_complete(async_task)
+        return val
     
 class DataDictsValidator(object):
     """
@@ -263,3 +269,15 @@ class DateTimeValidator(Regexp):
                 message = self.message
 
         raise ValidationError(message)
+
+class DefaultValue():
+    """Specifies default value for input field
+    """
+    
+    def __init__(self, value: any):
+        self.value = value
+
+    def __call__(self, form, field, message=None):
+        if field.data is None:
+            field.data = self.value
+            

@@ -5,7 +5,7 @@ from hawthorn.asynchttphandler import GeneralTornadoHandler
 
 SESSION_UID_KEY = 'uid'
 
-def authorized_session_access_control(handler: GeneralTornadoHandler):
+async def authorized_session_access_control(handler: GeneralTornadoHandler):
     ac_result = False
     ac_message = 'Reject'
     authed_uid = None

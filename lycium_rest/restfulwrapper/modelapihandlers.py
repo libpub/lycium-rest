@@ -164,6 +164,7 @@ class ModelRESTfulHandler(tornado.web.RequestHandler):
             form_items.append(self.form(formdata=None, data=inputs, meta={'csrf': False}))
             
         insert_models = []
+        after_saves = []
         for form_item in form_items:
             result = validate_form(form_item)
             if not result.is_success():
@@ -176,6 +177,18 @@ class ModelRESTfulHandler(tornado.web.RequestHandler):
             if hasattr(m, 'set_session_uid'):
                 session_uid = self.session[SESSION_UID_KEY]
                 setattr(m, 'set_session_uid', session_uid)
+                
+            b, msg = await self._check_before_save(form_item)
+            if not b:
+                result.code = RESULT_CODE.INVALID_PARAM
+                result.message = msg
+                self.set_header('Content-Type', 'application/json')
+                self.write(result.encode_json())
+                self.finish()
+                return
+            if hasattr(form_item, 'after_save'):
+                after_saves.append(getattr(form_item, 'after_save'))
+                
             save_form_fields(form_item, m, ignore_empty=True)
             insert_models.append(m)
 
@@ -203,6 +216,8 @@ class ModelRESTfulHandler(tornado.web.RequestHandler):
                 else:
                     result.data = resp_data[0]
                 LOG.info('insert [%s] succeed', get_model_class_name(self.model))
+                if after_saves:
+                    [await self._call(cb, data=insert_models[i], session=self.session) for i, cb in after_saves]
             else:
                 LOG.warning('insert [%s] failed', get_model_class_name(self.model))
         except Exception as e:
@@ -385,6 +400,12 @@ class ModelRESTfulHandler(tornado.web.RequestHandler):
             if hasattr(m, 'set_session_uid'):
                 session_uid = self.session[SESSION_UID_KEY]
                 setattr(m, 'set_session_uid', session_uid)
+            
+            b, msg = await self._check_before_save(form_item)
+            if not b:
+                result.code = RESULT_CODE.INVALID_PARAM
+                result.message = msg
+                break
             save_form_fields(form_item, m, ignore_empty=ignore_empty)
 
             result = GeneralResponseObject(code=RESULT_CODE.FAIL, message=i18n.t('basic.edit_data_failed', **locale_params))
@@ -398,6 +419,8 @@ class ModelRESTfulHandler(tornado.web.RequestHandler):
                     else:
                         result.data = dump_model_data(m, columns=columns)
                     LOG.info('edit %s [%s] succeed', get_model_class_name(self.model), str(form_pk_id))
+                    if hasattr(form_item, 'after_save'):
+                        await self._call(getattr(form_item, data=m, session=self.session))
                 else:
                     LOG.warning('edit %s [%s] failed', get_model_class_name(self.model), str(form_pk_id))
             except Exception as e:
@@ -408,3 +431,17 @@ class ModelRESTfulHandler(tornado.web.RequestHandler):
         self.set_header('Content-Type', 'application/json')
         self.write(result.encode_json())
         self.finish()
+        
+    async def _check_before_save(self, form_item: Form, **kwargs):
+        if hasattr(form_item, 'before_save'):
+            before_save = getattr(form_item, 'before_save')
+            b, msg = await self._call(before_save, session=self.session)
+            return b, msg
+        return True, ''
+
+    async def _call(self, callable: callable, **kwargs):
+        if tornado.gen.is_coroutine_function(callable) or asyncio.iscoroutinefunction(callable):
+            return await callable(**kwargs)
+        else:
+            return callable(**kwargs)
+            

@@ -7,7 +7,7 @@ from sqlalchemy.orm import class_mapper
 from wtforms import Form, Field
 from wtforms.validators import DataRequired, NumberRange, Length, Regexp, AnyOf, Email, URL
 from hawthorn.modelutils import ModelBase, model_columns, get_model_class_name
-from lycium_rest.formvalidation.validators import DateTimeValidator
+from lycium_rest.formvalidation.validators import DateTimeValidator, DefaultValue
 from lycium_rest.formvalidation.formitemprops import FormItemProps
 from .utils import find_model_class_by_cls_name
 
@@ -68,7 +68,7 @@ class RESTfulAPIWraper:
             }
             if self.cls:
                 columns, pk = model_columns(self.cls)
-                formFieldsMapper = {}
+                formFieldsMapper = {colname: None for colname in columns}
                 if self.form:
                     form = self.form()
                     for name, field in form._fields.items():
@@ -76,6 +76,8 @@ class RESTfulAPIWraper:
                         colname = name
                         if field.id:
                             colname = field.id
+                        if colname not in formFieldsMapper:
+                            columns.append(colname)
                         formFieldsMapper[colname] = field
                             
                 self._descriptor['rowKey'] = pk
@@ -97,19 +99,23 @@ class RESTfulAPIWraper:
             'valueType': 'text',
             'formItemProps': {'rules': []},
         }
-        colfield: Column = getattr(self.cls, colname)
-        if colfield.comment:
-            column['description'] = colfield.comment
-        if colfield.autoincrement:
-            if isinstance(colfield.autoincrement, bool) or colfield.primary_key:
-                column['hideInForm'] = True
-                column['readonly'] = True
-                column['hideInSearch'] = True
-        
-        elif colfield.index:
-            column['hideInSearch'] = False
-        if colname in formFieldsMapper:
-            self._format_column_with_form_field(column, formFieldsMapper[colname])
+        if hasattr(self.cls, colname):
+            colfield: Column = getattr(self.cls, colname)
+            if colfield.comment:
+                column['description'] = colfield.comment
+            if colfield.autoincrement:
+                if isinstance(colfield.autoincrement, bool) or colfield.primary_key:
+                    column['hideInForm'] = True
+                    column['readonly'] = True
+                    column['hideInSearch'] = True
+            elif colfield.index:
+                column['hideInSearch'] = False
+        else:
+            column['hideInTable'] = True
+            column['hideInSearch'] = True
+        colformfield: Field = formFieldsMapper.get(colname, None)
+        if colformfield:
+            self._format_column_with_form_field(column, colformfield)
             
         return column
     
@@ -152,6 +158,8 @@ class RESTfulAPIWraper:
             column['formItemProps']['rules'].append({'type': 'email', 'message': validator.message})
         elif isinstance(validator, URL):
             column['formItemProps']['rules'].append({'type': 'url', 'message': validator.message})
+        elif isinstance(validator, DefaultValue):
+            column['initialValue'] = validator.value
         elif isinstance(validator, FormItemProps):
             self._format_column_normal_form_item_props(column, validator)
     
