@@ -24,7 +24,7 @@ from ..formvalidation.formutils import validate_form, save_form_fields
 from ..valueobjects.resultcodes import RESULT_CODE
 from ..valueobjects.responseobject import GeneralResponseObject, ListResponseObject
 
-from .utils import format_model_query_conditions, dump_model_data, read_request_parameters, get_locale_params, get_listquery_pager_info, get_listquery_sort_info
+from .utils import format_model_query_conditions, format_column_name_mappings, dump_model_data, read_request_parameters, get_locale_params, get_listquery_pager_info, get_listquery_sort_info
 
 LOG = logging.getLogger('services.generalmodelapi.apihandlers')
 
@@ -129,7 +129,7 @@ class ModelRESTfulHandler(tornado.web.RequestHandler):
                         if hasattr(m, 'as_dict'):
                             result.data = getattr(m, 'as_dict')()
                         else:
-                            result.data = dump_model_data(m, columns=columns)
+                            result.data = dump_model_data(m, columns=columns, column_name_mapping=format_column_name_mappings(self.form))
                     break
         else:
             result = await self.do_get_list(filters, locale_params)
@@ -310,15 +310,18 @@ class ModelRESTfulHandler(tornado.web.RequestHandler):
 
             rows, total = await DbProxy().query_list(self.model, filters=filter_conds, limit=limit, offset=offset, sort=orderby, direction=direction, selections=fields)
             
-            if not fields:
-                if hasattr(self.model, 'as_dict'):
-                    formatted_rows = []
-                    for row in rows:
-                        m = self.model()
-                        for k, v in row.items():
-                            setattr(m, k, v)
-                        formatted_rows.append(getattr(m, 'as_dict')())
-                    rows = formatted_rows
+            if not fields and hasattr(self.model, 'as_dict'):
+                formatted_rows = []
+                for row in rows:
+                    m = self.model()
+                    for k, v in row.items():
+                        setattr(m, k, v)
+                    formatted_rows.append(getattr(m, 'as_dict')())
+                rows = formatted_rows
+            else:
+                column_name_mapping = format_column_name_mappings(self.form)
+                if column_name_mapping:
+                    rows = [{column_name_mapping.get(k, k): v for k, v in row.items()} for row in rows]
 
             result.code = RESULT_CODE.OK
             result.message = i18n.t('basic.success', **locale_params)

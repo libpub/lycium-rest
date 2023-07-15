@@ -5,7 +5,7 @@ import logging
 from wtforms import Form
 from hawthorn.modelutils import ModelBase, get_model_class_name
 from .accesscontrol.authorizedsession import SESSION_UID_KEY
-from .restdescriptor import RESTfulAPIWraper, Relations, Operations
+from .restdescriptor import RESTfulAPIWraper, Relations, Operations, set_restful_api_by_model
 from .register import register_model_general_api_handlers, register_model_page_descriptor_api_handler
 
 __all__ = ['restful_api', 'SESSION_UID_KEY', 'RESTfulAPIWraper', 'Relations', 'Operations']
@@ -35,9 +35,10 @@ def restful_api(endpoint: str = '', title='', form: Form = None, **kwargs):
     """
     def decorator(cls: ModelBase):
         uri = endpoint
+        model_name = get_model_class_name(cls)
         if not uri:
-            uri = '/api/' + get_model_class_name(cls).lower() + 's'
-            LOG.info('treat %s as RESTful URI:%s', get_model_class_name(cls), uri)
+            uri = '/api/' + model_name.lower() + 's'
+            LOG.info('treat %s as RESTful URI:%s', model_name, uri)
             
         auto_association = kwargs.pop('auto_association', None)
         custom_relations: Relations | list[Relations] = kwargs.pop('relations', None)
@@ -52,6 +53,7 @@ def restful_api(endpoint: str = '', title='', form: Form = None, **kwargs):
             route_pieces = uri.split('/')
             page_name = route_pieces[len(route_pieces)-1]
             __page_descriptor_model_wrappers[page_name] = w
+            set_restful_api_by_model(model_name, uri)
         else:
             raise ValueError("Duplicate registering model RESTful URI '%s'" % (uri))
         

@@ -6,6 +6,7 @@ import logging
 import tornado.web
 import tornado.httputil
 import sqlalchemy
+from wtforms import Form, Field
 from typing import Iterable
 from hawthorn.asynchttphandler import args_as_dict, request_body_as_json
 from hawthorn.modelutils import ModelBase, model_columns
@@ -105,7 +106,16 @@ def format_model_query_conditions(model: ModelBase, filters: dict = {}, skip_non
                     filter_conds.append(model_field==v)
     return filter_conds, ', '.join(err_messages)
 
-def dump_model_data(model: ModelBase, columns: list = None):
+def format_column_name_mappings(form: Form = None):
+    column_name_mapping = {}
+    if form:
+        form_inst = form()
+        for field in form_inst._fields.values():
+            if field.id:
+                column_name_mapping[field.id] = field.name
+    return column_name_mapping
+
+def dump_model_data(model: ModelBase, columns: list = None, column_name_mapping: dict = {}):
     values = {}
     if not columns:
         columns, _ = model_columns(model)
@@ -119,7 +129,10 @@ def dump_model_data(model: ModelBase, columns: list = None):
             val = getattr(model, c)
             if isinstance(val, bytes):
                 val = val.decode('utf-8')
-            values[c] = val
+            if column_name_mapping:
+                values[column_name_mapping.get(c, c)] = val
+            else:
+                values[c] = val
     return values
 
 def read_request_parameters(request: tornado.httputil.HTTPServerRequest):

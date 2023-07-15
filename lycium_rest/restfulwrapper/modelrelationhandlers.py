@@ -15,7 +15,7 @@ from hawthorn.dbproxy import DbProxy
 from ..valueobjects.resultcodes import RESULT_CODE
 from ..valueobjects.responseobject import GeneralResponseObject, ListResponseObject
 
-from .utils import format_model_query_conditions, read_request_parameters, get_locale_params
+from .utils import format_model_query_conditions, read_request_parameters, get_locale_params, get_listquery_sort_info
 
 LOG = logging.getLogger('services.generalmodelapi.apihandlers')
 
@@ -73,6 +73,7 @@ class ModelRelationsRESTfulHandler(tornado.web.RequestHandler):
             self.finish()
             return
         filters = read_request_parameters(self.request)
+        orderby, direction = get_listquery_sort_info(filters)
         filters[self.src_field] = instanceID
         dst_field: sqlalchemy.Column = None
         if self.src_field in filters:
@@ -90,7 +91,7 @@ class ModelRelationsRESTfulHandler(tornado.web.RequestHandler):
 
             limit = 1000
             offset = 0
-            rows, total = await DbProxy().query_list(self.middle_model, filters=filter_conds, limit=limit, offset=offset, selections=[dst_field.name])
+            rows, total = await DbProxy().query_list(self.middle_model, filters=filter_conds, limit=limit, offset=offset, sort=orderby, direction=direction, selections=[dst_field.name])
             result.code = RESULT_CODE.OK
             result.message = i18n.t('basic.success', **locale_params)
             result.total = total

@@ -3,5 +3,5 @@
 
 from .formitemprops import *
 from .formutils import *
-from .modifyingbeheviorform import *
+from .modifyingbeheviorformfields import *
 from .validators import *
