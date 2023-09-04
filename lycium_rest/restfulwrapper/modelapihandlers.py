@@ -8,6 +8,7 @@ import tornado.gen
 import asyncio
 import sqlalchemy
 import i18n
+import json
 import traceback
 from http import HTTPStatus
 from typing import Iterable
@@ -217,7 +218,10 @@ class ModelRESTfulHandler(tornado.web.RequestHandler):
                     result.data = resp_data[0]
                 LOG.info('insert [%s] succeed', get_model_class_name(self.model))
                 if after_saves:
-                    [await self._call(cb, data=insert_models[i], session=self.session) for i, cb in after_saves]
+                    i = 0
+                    for cb in after_saves:
+                        await self._call(cb, session=self.session, data=insert_models[i])
+                        i = i + 1
             else:
                 LOG.warning('insert [%s] failed', get_model_class_name(self.model))
         except Exception as e:
@@ -295,8 +299,13 @@ class ModelRESTfulHandler(tornado.web.RequestHandler):
         """
         filters = params.get('filter', {})
         fields = params.get('fields', [])
-        if not filters or not isinstance(filters, dict):
-            filters = {}
+        if not filters:
+            filters = params
+        elif not isinstance(filters, dict):
+            if isinstance(filters, str):
+                filters = json.loads(filters)
+            else:
+                filters = {}
         limit, offset = get_listquery_pager_info(params)
         orderby, direction = get_listquery_sort_info(params)
 
@@ -423,7 +432,7 @@ class ModelRESTfulHandler(tornado.web.RequestHandler):
                         result.data = dump_model_data(m, columns=columns)
                     LOG.info('edit %s [%s] succeed', get_model_class_name(self.model), str(form_pk_id))
                     if hasattr(form_item, 'after_save'):
-                        await self._call(getattr(form_item, data=m, session=self.session))
+                        await self._call(getattr(form_item, 'after_save'), session=self.session, data=m)
                 else:
                     LOG.warning('edit %s [%s] failed', get_model_class_name(self.model), str(form_pk_id))
             except Exception as e:

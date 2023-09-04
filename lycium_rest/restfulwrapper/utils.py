@@ -101,9 +101,12 @@ def format_model_query_conditions(model: ModelBase, filters: dict = {}, skip_non
                 filter_conds.append(model_field.in_(v))
             else:
                 if model_field.expression.type.__visit_name__ == 'string':
+                    # print(k, 'contains', v)
                     filter_conds.append(model_field.contains(str(v)))
                 else:
+                    # print(k, 'equals', v)
                     filter_conds.append(model_field==v)
+        # print('filter_conds', filter_conds)
     return filter_conds, ', '.join(err_messages)
 
 def format_column_name_mappings(form: Form = None):

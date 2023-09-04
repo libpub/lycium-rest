@@ -7,7 +7,7 @@ from sqlalchemy.orm import class_mapper
 from wtforms import Form, Field, FieldList, FormField
 from wtforms.validators import DataRequired, NumberRange, Length, Regexp, AnyOf, Email, URL
 from hawthorn.modelutils import ModelBase, model_columns, get_model_class_name
-from lycium_rest.formvalidation.validators import DataDictsValidator, DataExistsValidator, DateTimeValidator, DefaultValue
+from lycium_rest.formvalidation.validators import DataDictsValidator, DataExistsValidator, DateTimeValidator, DefaultValue, RequiredDependencyField
 from lycium_rest.formvalidation.formitemprops import FormItemProps
 from .utils import find_model_class_by_cls_name
 
@@ -197,9 +197,9 @@ class RESTfulAPIWraper:
         elif isinstance(validator, Length) or isinstance(validator, NumberRange):
             if validator.max != 0 or validator.min != 0:
                 range_rule = {'message': validator.message}
-                if validator.max != 0:
+                if validator.max is not None:
                     range_rule['max'] = validator.max
-                if validator.min != 0:
+                if validator.min is not None:
                     range_rule['min'] = validator.min
                 column['formItemProps']['rules'].append(range_rule)
             if isinstance(validator, NumberRange):
@@ -213,6 +213,19 @@ class RESTfulAPIWraper:
             column['formItemProps']['rules'].append({'enum': enumValues, 'message': validator.message})
         elif isinstance(validator, DefaultValue):
             column['initialValue'] = validator.value
+        elif isinstance(validator, RequiredDependencyField):
+            dep_required_rule = {
+                'required': {
+                    'depends': [
+                        {
+                            'field': validator.field_name,
+                            'value': validator.match_value,
+                        }
+                    ],
+                    'message': validator.message,
+                },
+            }
+            column['formItemProps']['rules'].append(dep_required_rule)
         elif isinstance(validator, FormItemProps):
             self._format_column_normal_form_item_props(column, validator)
     

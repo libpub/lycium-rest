@@ -13,7 +13,7 @@ class _ResultCode(Constant):
     # 数据不存在
     DATA_DOES_NOT_EXISTS = 103
     # 数据已存在
-    DAT_ALREADY_EXISTS = 104
+    DATA_ALREADY_EXISTS = 104
     # 没有新数据可保存
     NOTHING_TO_SAVE = 105
     INTERNAL_ERROR = 500
