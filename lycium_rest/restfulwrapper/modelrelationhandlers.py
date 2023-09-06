@@ -8,7 +8,7 @@ import sqlalchemy
 import i18n
 from http import HTTPStatus
 from typing import Iterable
-from hawthorn.asynchttphandler import GeneralTornadoHandler, request_body_as_json
+from hawthorn.asynchttphandler import GeneralTornadoHandler, request_body_as_json, routes
 from hawthorn.session import TornadoSession
 from hawthorn.modelutils import ModelBase, model_columns, get_model_class_name
 from hawthorn.dbproxy import DbProxy
@@ -56,6 +56,12 @@ class ModelRelationsRESTfulHandler(tornado.web.RequestHandler):
             err_message = '%s or %s filed does not exists in relation model' % (self.src_field, self.dst_field)
             return err_message
         return ''
+
+    def set_default_headers(self):
+        """Responses default headers"""
+        if routes.default_headers:
+            for k, v in routes.default_headers.items():
+                self.set_header(k, v)
 
     async def get(self, instanceID: str|int = None):
         """

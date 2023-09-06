@@ -19,7 +19,7 @@ from wtforms import StringField, IntegerField, BooleanField, HiddenField
 from wtforms.validators import DataRequired, NumberRange, Length, Regexp, AnyOf, Email
 from hawthorn.dbproxy import DbProxy
 from hawthorn.webapplication import WebApplication
-from hawthorn.asynchttphandler import GeneralTornadoHandler, async_route, request_body_as_json
+from hawthorn.asynchttphandler import GeneralTornadoHandler, async_route, request_body_as_json, set_default_headers
 from hawthorn.asyncrequest import async_http_request, async_post_json
 from hawthorn.modelutils import ModelBase, meta_data
 from hawthorn.modelutils.behaviors import ModifyingBehevior
@@ -423,6 +423,7 @@ class TestModelRESTful(unittest.IsolatedAsyncioTestCase):
         print("Application initializing...")
         await do_migrations()
         print("Application running...")
+        set_default_headers({"Access-Control-ALLow-Origin": "*", "Access-Control-ALLoW-Headers": "*"})
         web_app.listen(port=CONF.server.get('port'), address=CONF.server.get('host'))
         self.addAsyncCleanup(self.do_cleanup)
         
@@ -434,6 +435,7 @@ class TestModelRESTful(unittest.IsolatedAsyncioTestCase):
         }
         endpoint_domain = CONF.server['host'] + ':' + str(CONF.server['port'])
         resp = await async_http_request('POST', f"http://{endpoint_domain}/api/user/signin", json=params)
+        print("headers:", resp.headers)
         self.assertEqual(resp.code, http.HTTPStatus.OK)
         result_data = json.loads(resp.body)
         self.assertEqual(result_data.get('code', -1), 0)

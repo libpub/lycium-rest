@@ -237,3 +237,15 @@ def get_listquery_sort_info(params):
         order = order[1:]
         direction = 'desc'
     return order, direction
+
+def get_listquery_filters_and_specified_fields(params: dict):
+    filters = params.get('filter', {})
+    fields = params.get('fields', [])
+    if not filters:
+        filters = params
+    elif not isinstance(filters, dict):
+        if isinstance(filters, str):
+            filters = json.loads(filters)
+        else:
+            filters = {}
+    return filters, fields

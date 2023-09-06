@@ -13,7 +13,7 @@ import traceback
 from http import HTTPStatus
 from typing import Iterable
 from wtforms import Form
-from hawthorn.asynchttphandler import GeneralTornadoHandler, request_body_as_json
+from hawthorn.asynchttphandler import GeneralTornadoHandler, request_body_as_json, routes
 from hawthorn.session import TornadoSession
 from hawthorn.exceptionreporter import ExceptionReporter
 from hawthorn.modelutils import ModelBase, model_columns, get_model_class_name
@@ -25,7 +25,7 @@ from ..formvalidation.formutils import validate_form, save_form_fields
 from ..valueobjects.resultcodes import RESULT_CODE
 from ..valueobjects.responseobject import GeneralResponseObject, ListResponseObject
 
-from .utils import format_model_query_conditions, format_column_name_mappings, dump_model_data, read_request_parameters, get_locale_params, get_listquery_pager_info, get_listquery_sort_info
+from .utils import format_model_query_conditions, format_column_name_mappings, dump_model_data, read_request_parameters, get_locale_params, get_listquery_pager_info, get_listquery_sort_info, get_listquery_filters_and_specified_fields
 
 LOG = logging.getLogger('services.generalmodelapi.apihandlers')
 
@@ -94,6 +94,12 @@ class ModelRESTfulHandler(tornado.web.RequestHandler):
                 break
         return is_reject, reject_reason
     
+    def set_default_headers(self):
+        """Responses default headers"""
+        if routes.default_headers:
+            for k, v in routes.default_headers.items():
+                self.set_header(k, v)
+
     async def prepare(self):
         is_reject, reject_reason = await self.check_access_control()
         if is_reject:
@@ -297,15 +303,7 @@ class ModelRESTfulHandler(tornado.web.RequestHandler):
         """
         API handler of get model list data by filter condition and pagination
         """
-        filters = params.get('filter', {})
-        fields = params.get('fields', [])
-        if not filters:
-            filters = params
-        elif not isinstance(filters, dict):
-            if isinstance(filters, str):
-                filters = json.loads(filters)
-            else:
-                filters = {}
+        filters, fields = get_listquery_filters_and_specified_fields(params)
         limit, offset = get_listquery_pager_info(params)
         orderby, direction = get_listquery_sort_info(params)
 
@@ -345,10 +343,7 @@ class ModelRESTfulHandler(tornado.web.RequestHandler):
         """
         API handler of get model tree list data by filter condition
         """
-        filters = params.get('filter', {})
-        fields = params.get('fields', [])
-        if not filters or not isinstance(filters, dict):
-            filters = {}
+        filters, fields = get_listquery_filters_and_specified_fields(params)
         limit, offset = get_listquery_pager_info(params, default_list_limit=3000, max_list_limit=5000)
         orderby, direction = get_listquery_sort_info(params)
 
@@ -456,4 +451,4 @@ class ModelRESTfulHandler(tornado.web.RequestHandler):
             return await callable(**kwargs)
         else:
             return callable(**kwargs)
-            
+
