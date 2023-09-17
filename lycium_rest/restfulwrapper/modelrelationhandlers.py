@@ -62,6 +62,10 @@ class ModelRelationsRESTfulHandler(tornado.web.RequestHandler):
         if routes.default_headers:
             for k, v in routes.default_headers.items():
                 self.set_header(k, v)
+                
+    def options(self):
+        self.set_status(HTTPStatus.NO_CONTENT)
+        self.finish()
 
     async def get(self, instanceID: str|int = None):
         """

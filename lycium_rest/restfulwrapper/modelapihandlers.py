@@ -107,6 +107,10 @@ class ModelRESTfulHandler(tornado.web.RequestHandler):
             self.set_status(HTTPStatus.FORBIDDEN)
             self.finish()
             return
+        
+    def options(self):
+        self.set_status(HTTPStatus.NO_CONTENT)
+        self.finish()
 
     async def get(self, id: str|int = None):
         """
